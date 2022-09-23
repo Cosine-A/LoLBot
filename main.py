@@ -21,18 +21,18 @@ async def on_ready():
     state_message = discord.Game("!lol help 를 입력해주세요!")
     await bot.change_presence(status=discord.Status.online, activity=state_message)
 
+
 command_list = ['search', 'latest']
+
 
 @bot.event
 async def on_message(message):
     search = message.content
-    if message.channel.id != main_channel:
-        return
     global instance
     if search == "!lol help":
         embed = discord.Embed(title="봇 도움말", color=0xCD8A99)
 
-        embed.add_field(name="!lol solo [닉네임]", value=f"해당 플레이어의 솔로 랭크 전적을 검색합니다.", inline=False)
+        embed.add_field(name="!lol info [닉네임]", value=f"해당 플레이어의 정보를 검색합니다.", inline=False)
         embed.add_field(name="!lol latest [닉네임]", value=f"해당 플레이어의 최근 전적을 검색합니다.", inline=False)
 
         now_time = f"{now.year}/{now.month}/{now.day} {now.hour}:{now.minute}:{now.second}"
@@ -40,8 +40,8 @@ async def on_message(message):
         bot_channel = bot.get_channel(main_channel)
         await bot_channel.send(embed=embed)
 
-    if search.startswith("!lol solo "):
-        name = search[10:]
+    if search.startswith("!lol info "):
+        name = space_to_html(search[10:])
 
         try:
             instance = RankInfo(name)
@@ -50,20 +50,51 @@ async def on_message(message):
             await bot.get_channel(main_channel).send(f"존재하지 않는 **소환사** 명입니다. [ERROR: {code}]")
             return
 
-        rank_list = instance.get_solo_rank()
+        embed = discord.Embed(title="클릭 시 op.gg로 이동합니다",
+                              url=f"https://www.op.gg/summoners/kr/{name}",
+                              color=0xFF9900)
+        embed.set_thumbnail(url=f"{instance.get_profile()}")
+        embed.set_author(name=f"{html_to_space(name)} (Lv.{instance.get_level()})", icon_url=f"{instance.get_profile()}")
 
-        embed = discord.Embed(title=f"{name}", color=0xFF9900, description=f"Lv.{instance.get_level()}")
+        solo_rank = instance.get_solo_rank()
+        free_rank = instance.get_free_rank()
 
-        embed.add_field(name="솔로 랭크", value=f"티어: {rank_list[0]} {rank_list[1]}\nLP: {rank_list[4]}\n승: {rank_list[2]}\n패: {rank_list[3]}",
-                        inline=False)
+        if not solo_rank:
+            embed.add_field(name="『 솔로 랭크 』", value="Unranked", inline=True)
+        else:
+            winning_percentage = str((solo_rank[2] / (solo_rank[2] + solo_rank[3]) * 100))[:2]
+            embed.add_field(name="『 솔로 랭크 』",
+                            value=f"티어: {solo_rank[0]} {solo_rank[1]}\n"
+                                  f"점수: {solo_rank[4]}LP\n"
+                                  f"승률: {winning_percentage}%\n"
+                                  f"승: {solo_rank[2]}\n"
+                                  f"패: {solo_rank[3]}\n"
+                            , inline=True)
+
+        if not free_rank:
+            embed.add_field(name="『 자유 랭크 』", value="Unranked", inline=True)
+        else:
+            winning_percentage = str((free_rank[2] / (free_rank[2] + free_rank[3]) * 100))[:2]
+            embed.add_field(name="『 자유 랭크 』",
+                            value=f"티어: {free_rank[0]} {free_rank[1]}\n"
+                                  f"점수: {free_rank[4]}LP\n"
+                                  f"승률: {winning_percentage}%\n"
+                                  f"승: {free_rank[2]}\n"
+                                  f"패: {free_rank[3]}\n"
+                            , inline=True)
+
+        embed.add_field(name="1위 숙련도 챔피언",
+                        value="1", inline=False)
+        embed.set_image(url="https://ddragon.leagueoflegends.com/cdn/12.18.1/img/champion/Pyke.png")
 
         now_time = f"{now.year}/{now.month}/{now.day} {now.hour}:{now.minute}:{now.second}"
-        embed.set_footer(text=f"솔로 랭크 검색 - {now_time}")
+        embed.set_footer(text=f"소환사 정보 검색 - {now_time}")
+
         bot_channel = bot.get_channel(main_channel)
         await bot_channel.send(embed=embed)
 
     if search.startswith("!lol latest "):
-        name = search[12:]
+        name = space_to_html(search[12:])
 
         try:
             instance = RankInfo(name)
@@ -74,7 +105,7 @@ async def on_message(message):
 
         latest_list = instance.get_latest_game()
 
-        embed = discord.Embed(title=f"{name}", color=0xFF9900, description=f"Lv.{instance.get_level()}")
+        embed = discord.Embed(title=f"{name}", color=0xCC9900, description=f"Lv.{instance.get_level()}")
 
         embed.add_field(name="챔피언", value=f"이름: {latest_list[12]}\n레벨: {latest_list[2]}", inline=False)
         embed.add_field(name="라인", value=f"{latest_list[0]}{latest_list[1]}", inline=False)
@@ -92,7 +123,7 @@ async def on_message(message):
 
 
 region = 'kr'
-api = 'RGAPI-b57f5af7-e4f3-4f27-a825-698fa90fae5a'
+api = 'RGAPI-f6c302a1-3899-48a7-ad80-59b49ab80363'
 
 watcher = LolWatcher(api)
 
@@ -102,17 +133,27 @@ class RankInfo:
     def __init__(self, target):
         self.target = target
         self.info_name = watcher.summoner.by_name(region, target)
+        print(self.info_name)
+        print(self.info_name['profileIconId'])
         self.level = self.info_name["summonerLevel"]
+
+    def get_profile(self):
+        return f"http://ddragon.leagueoflegends.com/cdn/12.18.1/img/profileicon/{self.info_name['profileIconId']}.png"
 
     def get_level(self):
         return self.level
 
     def get_solo_rank(self):
+        return self.get_rank("RANKED_SOLO_5x5")
+
+    def get_free_rank(self):
+        return self.get_rank("RANKED_FLEX_SR")
+
+    def get_rank(self, rank):
         rank_list = []
         for info in watcher.league.by_summoner(region, self.info_name["id"]):
-            print(info)
-            if info["queueType"] == "RANKED_SOLO_5x5":
-                rank_list.append(info["tier"])
+            if info["queueType"] == rank:
+                rank_list.append(tier_to_korean(info["tier"]))
                 rank_list.append(info["rank"])
                 rank_list.append(info["wins"])
                 rank_list.append(info["losses"])
@@ -154,6 +195,34 @@ class RankInfo:
         return info_list
 
 
+def space_to_html(message):
+    return message.replace(" ", "%20")
+
+
+def html_to_space(message):
+    return message.replace("%20", " ")
+
+
+def tier_to_korean(target):
+    if target == "CHALLENGER":
+        return "챌린저"
+    if target == "GRANDMASTER":
+        return "그랜드마스터"
+    if target == "MASTER":
+        return "마스터"
+    if target == "DIAMOND":
+        return "다이아몬드"
+    if target == "PLATINUM":
+        return "플레티넘"
+    if target == "GOLD":
+        return "골드"
+    if target == "SILVER":
+        return "실버"
+    if target == "BRONZE":
+        return "브론즈"
+    if target == "IRON":
+        return "아이언"
+
 def lane_to_korean(target):
     if target == "TOP":
         return "탑"
@@ -176,5 +245,6 @@ def role_to_korean(target):
         return ", 원딜"
     if target == "SUPPORT":
         return ", 서포터"
+
 
 bot.run(token)
